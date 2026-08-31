@@ -12,7 +12,9 @@ Lekka aplikacja webowa do zarządzania zamówieniami koszulek Pless Finest. Dzia
 - status realizacji i płatności,
 - filtrowanie i wyszukiwanie,
 - podsumowanie aktywnych zamówień, odbiorów, wysyłek i customów,
-- zapis danych w przeglądarce,
+- zapis danych w przeglądarce oraz opcjonalna wspólna baza w Google Sheets,
+- automatyczna synchronizacja telefonu i komputera co 30 sekund,
+- kolejka zmian na wypadek chwilowego braku internetu,
 - eksport CSV oraz import / eksport kopii JSON,
 - jasny i ciemny motyw,
 - pełna obsługa telefonu i komputera.
@@ -33,9 +35,11 @@ Otwórz plik `index.html` w przeglądarce. Nie trzeba instalować Node.js ani ur
 4. Wybierz **Deploy from a branch**, gałąź `main` i katalog `/ (root)`.
 5. Po zapisaniu GitHub pokaże publiczny adres aplikacji.
 
-## Dane i kopie zapasowe
+## Wspólna baza Google Sheets
 
-Dane są zapisywane w `localStorage` konkretnej przeglądarki i urządzenia. Nie synchronizują się między komputerami. Regularnie używaj przycisku **Kopia**, aby pobrać pełną kopię JSON do późniejszego importu. Przycisk **CSV** tworzy arkusz do analizy lub druku.
+Bez konfiguracji dane nadal zapisują się lokalnie. Aby widzieć te same zamówienia na telefonie i komputerze, użyj dołączonego pliku `pless-finest-monitor-zamowien.xlsx`, skryptu `google-apps-script/Code.gs` i instrukcji `INSTRUKCJA-GOOGLE-SHEETS.md`. Po konfiguracji kliknij wskaźnik **Lokalnie** w górnym pasku aplikacji i wpisz adres wdrożenia oraz prywatny klucz.
+
+Regularnie używaj również przycisku **Kopia**, aby pobrać pełną kopię JSON. Przycisk **CSV** tworzy arkusz do analizy lub druku.
 
 ## Modele
 
@@ -62,8 +66,10 @@ index.html   — struktura interfejsu
 styles.css   — wygląd i responsywność
 app.js       — logika, zapis i eksport danych
 assets/      — logo Pless Finest
+google-apps-script/Code.gs — połączenie z Arkuszem Google
+INSTRUKCJA-GOOGLE-SHEETS.md — konfiguracja krok po kroku
 ```
 
 ## Ważne
 
-To wersja działająca lokalnie na jednym urządzeniu. Jeśli potrzebujesz wspólnej bazy dla kilku osób, logowania lub synchronizacji między telefonem i komputerem, aplikację trzeba połączyć z backendem (np. Supabase, Firebase albo Cloudflare D1).
+Nie wpisuj adresu skryptu ani klucza `API_TOKEN` bezpośrednio do kodu i nie publikuj ich na GitHubie. Aplikacja przechowuje te dane wyłącznie w pamięci przeglądarki na każdym urządzeniu.

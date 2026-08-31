@@ -26,6 +26,10 @@
           <span class="brand-sub">ORDER ROOM / PSZCZYNA</span>
         </a>
         <div class="topbar-actions">
+          <button class="sync-button" id="syncButton" type="button" data-state="local" aria-label="Ustaw synchronizację" title="Synchronizacja z Google Sheets">
+            <span class="sync-dot" aria-hidden="true"></span>
+            <span id="syncLabel">Lokalnie</span>
+          </button>
           <button class="icon-button" id="themeToggle" type="button" aria-label="Zmień motyw" title="Zmień motyw">
             <span data-icon="moon"></span>
           </button>
@@ -136,7 +140,7 @@
 
       <footer>
         <span>PLESS FINEST © <span id="year"></span></span>
-        <span>Dane zapisują się na tym urządzeniu.</span>
+        <span id="storageNote">Dane zapisują się na tym urządzeniu.</span>
       </footer>
     </div>
 
@@ -260,6 +264,39 @@
                 Zapisz zamówienie
               </button>
             </div>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="sync-backdrop" id="syncModal" hidden>
+      <section class="sync-dialog" role="dialog" aria-modal="true" aria-labelledby="syncTitle">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">WSPÓLNA BAZA</p>
+            <h2 id="syncTitle">Synchronizacja</h2>
+          </div>
+          <button class="icon-button" id="syncCloseBtn" type="button" aria-label="Zamknij">
+            <span data-icon="close"></span>
+          </button>
+        </header>
+        <form id="syncForm" class="sync-body">
+          <p>Połącz aplikację z arkuszem Google Sheets. Ten sam adres i klucz wpisz na telefonie oraz komputerze.</p>
+          <label class="field">
+            <span>Adres aplikacji Apps Script *</span>
+            <input id="syncUrl" type="url" required placeholder="https://script.google.com/macros/s/.../exec" autocomplete="url" />
+          </label>
+          <label class="field">
+            <span>Klucz dostępu *</span>
+            <input id="syncToken" type="password" required placeholder="Twój prywatny klucz" autocomplete="off" />
+          </label>
+          <div class="sync-status-note" id="syncMessage" data-state="local" role="status">
+            Aplikacja działa lokalnie. Zamówienia nie są jeszcze współdzielone.
+          </div>
+          <div class="sync-actions">
+            <button class="button button-ghost" id="syncDisconnectBtn" type="button">Odłącz</button>
+            <button class="button button-secondary" id="syncNowBtn" type="button">Odśwież teraz</button>
+            <button class="button button-primary" type="submit">Połącz i synchronizuj</button>
           </div>
         </form>
       </section>

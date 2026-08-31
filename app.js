@@ -2,6 +2,8 @@
 
 const STORAGE_KEY = "pless-finest-orders-v1";
 const THEME_KEY = "pless-finest-theme";
+const SYNC_KEY = "pless-finest-sync-v1";
+const SYNC_INTERVAL_MS = 30000;
 const STATUS_LABELS = {
   new: "Nowe",
   production: "W produkcji",
@@ -80,6 +82,9 @@ const state = {
   filter: "all",
   search: "",
   deleteId: null,
+  sync: loadSyncSettings(),
+  syncBusy: false,
+  syncTimer: null,
 };
 
 const els = {
@@ -87,6 +92,8 @@ const els = {
   modal: document.querySelector("#orderModal"), form: document.querySelector("#orderForm"), modalTitle: document.querySelector("#modalTitle"),
   itemsContainer: document.querySelector("#itemsContainer"), itemTemplate: document.querySelector("#itemTemplate"), shippingFields: document.querySelector("#shippingFields"),
   total: document.querySelector("#orderTotal"), formError: document.querySelector("#formError"), confirmModal: document.querySelector("#confirmModal"), toast: document.querySelector("#toast"),
+  syncModal: document.querySelector("#syncModal"), syncForm: document.querySelector("#syncForm"), syncUrl: document.querySelector("#syncUrl"), syncToken: document.querySelector("#syncToken"),
+  syncButton: document.querySelector("#syncButton"), syncLabel: document.querySelector("#syncLabel"), syncMessage: document.querySelector("#syncMessage"), storageNote: document.querySelector("#storageNote"),
 };
 
 function loadOrders() {
@@ -104,6 +111,33 @@ function saveOrders() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.orders));
 }
 
+function loadSyncSettings() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(SYNC_KEY) || "null");
+    if (parsed?.url && parsed?.token) {
+      return {
+        url: parsed.url,
+        token: parsed.token,
+        initialized: Boolean(parsed.initialized),
+        pendingUpserts: Array.isArray(parsed.pendingUpserts) ? parsed.pendingUpserts : [],
+        pendingDeletes: Array.isArray(parsed.pendingDeletes) ? parsed.pendingDeletes : [],
+      };
+    }
+  } catch (error) {
+    console.warn("Nie udało się odczytać ustawień synchronizacji", error);
+  }
+  return null;
+}
+
+function saveSyncSettings() {
+  if (state.sync) localStorage.setItem(SYNC_KEY, JSON.stringify(state.sync));
+  else localStorage.removeItem(SYNC_KEY);
+}
+
+function hasSyncSettings() {
+  return Boolean(state.sync?.url && state.sync?.token);
+}
+
 function escapeHtml(value = "") {
   return String(value).replace(/[&<>'"]/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
 }
@@ -117,8 +151,13 @@ function orderTotal(order) {
 }
 
 function getNextId() {
-  const numbers = state.orders.map((order) => Number(String(order.id).replace(/\D/g, ""))).filter(Number.isFinite);
-  return `PF-${Math.max(1039, ...numbers) + 1}`;
+  let id;
+  do {
+    const randomPart = globalThis.crypto?.randomUUID?.().slice(0, 6) || Math.random().toString(36).slice(2, 8);
+    id = `PF-${randomPart.toUpperCase()}`;
+  }
+  while (state.orders.some((order) => order.id === id));
+  return id;
 }
 
 function render() {
@@ -279,6 +318,7 @@ function readForm() {
   return {
     id: document.querySelector("#orderId").value || getNextId(),
     createdAt: state.orders.find((order) => order.id === document.querySelector("#orderId").value)?.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     isSample: false,
     customer: {
       name: document.querySelector("#customerName").value.trim(),
@@ -360,18 +400,204 @@ function downloadBlob(blob, name) {
 
 function importJson(file) {
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
       const parsed = JSON.parse(reader.result);
       const orders = Array.isArray(parsed) ? parsed : parsed.orders;
       if (!Array.isArray(orders)) throw new Error("Nieprawidłowy format");
       state.orders = orders;
       saveOrders(); render(); showToast(`Zaimportowano ${orders.length} zamówień.`);
+      if (hasSyncSettings()) await replaceRemoteOrders(state.orders.filter((order) => !order.isSample));
     } catch (error) {
       showToast("Nie udało się wczytać pliku.");
     }
   };
   reader.readAsText(file);
+}
+
+function setSyncStatus(syncState, label, detail) {
+  els.syncButton.dataset.state = syncState;
+  els.syncLabel.textContent = label;
+  els.syncMessage.dataset.state = syncState;
+  if (detail) els.syncMessage.textContent = detail;
+  if (syncState === "synced") els.storageNote.textContent = "Wspólna baza: Google Sheets.";
+  else if (syncState === "offline") els.storageNote.textContent = "Brak połączenia — dane są bezpieczne na tym urządzeniu.";
+  else els.storageNote.textContent = "Dane zapisują się na tym urządzeniu.";
+}
+
+function openSyncModal() {
+  els.syncUrl.value = state.sync?.url || "";
+  els.syncToken.value = state.sync?.token || "";
+  els.syncModal.hidden = false;
+  document.body.style.overflow = "hidden";
+  setTimeout(() => els.syncUrl.focus(), 80);
+}
+
+function closeSyncModal() {
+  els.syncModal.hidden = true;
+  document.body.style.overflow = "";
+}
+
+function normalizeSyncUrl(value) {
+  const url = new URL(value.trim());
+  if (url.protocol !== "https:" || !url.hostname.endsWith("script.google.com") || !url.pathname.endsWith("/exec")) {
+    throw new Error("Wklej adres wdrożenia Apps Script kończący się na /exec.");
+  }
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+async function remoteRequest(action, payload = {}) {
+  if (!hasSyncSettings()) throw new Error("Brak ustawień synchronizacji.");
+  let response;
+  if (action === "list" || action === "ping") {
+    const url = new URL(state.sync.url);
+    url.searchParams.set("action", action);
+    url.searchParams.set("token", state.sync.token);
+    url.searchParams.set("_", Date.now());
+    response = await fetch(url, { cache: "no-store", redirect: "follow" });
+  } else {
+    response = await fetch(state.sync.url, {
+      method: "POST",
+      body: JSON.stringify({ action, token: state.sync.token, ...payload }),
+      redirect: "follow",
+    });
+  }
+  const text = await response.text();
+  let result;
+  try { result = JSON.parse(text); }
+  catch { throw new Error("Serwer zwrócił nieprawidłową odpowiedź."); }
+  if (!response.ok || !result.ok) throw new Error(result.error || `Błąd połączenia (${response.status}).`);
+  return result;
+}
+
+function orderTimestamp(order) {
+  return new Date(order.updatedAt || order.createdAt || 0).getTime() || 0;
+}
+
+function mergeInitialOrders(localOrders, remoteOrders) {
+  const merged = new Map(remoteOrders.map((order) => [order.id, order]));
+  localOrders.filter((order) => !order.isSample).forEach((order) => {
+    const remote = merged.get(order.id);
+    if (!remote || orderTimestamp(order) > orderTimestamp(remote)) merged.set(order.id, order);
+  });
+  return [...merged.values()].sort((a, b) => orderTimestamp(b) - orderTimestamp(a));
+}
+
+function queueUpsert(order) {
+  state.sync.pendingDeletes = state.sync.pendingDeletes.filter((id) => id !== order.id);
+  state.sync.pendingUpserts = state.sync.pendingUpserts.filter((pending) => pending.id !== order.id);
+  state.sync.pendingUpserts.push(order);
+  saveSyncSettings();
+}
+
+function queueDelete(id) {
+  state.sync.pendingUpserts = state.sync.pendingUpserts.filter((order) => order.id !== id);
+  if (!state.sync.pendingDeletes.includes(id)) state.sync.pendingDeletes.push(id);
+  saveSyncSettings();
+}
+
+async function flushPendingChanges() {
+  for (const id of [...state.sync.pendingDeletes]) {
+    await remoteRequest("deleteOrder", { id });
+    state.sync.pendingDeletes = state.sync.pendingDeletes.filter((pendingId) => pendingId !== id);
+    saveSyncSettings();
+  }
+  for (const order of [...state.sync.pendingUpserts]) {
+    await remoteRequest("saveOrder", { order });
+    state.sync.pendingUpserts = state.sync.pendingUpserts.filter((pending) => pending.id !== order.id);
+    saveSyncSettings();
+  }
+}
+
+async function syncFromRemote({ firstConnection = false, silent = false } = {}) {
+  if (!hasSyncSettings() || state.syncBusy) return false;
+  state.syncBusy = true;
+  setSyncStatus("syncing", "Łączenie…", "Łączenie z arkuszem Google Sheets…");
+  try {
+    await flushPendingChanges();
+    const result = await remoteRequest("list");
+    const remoteOrders = Array.isArray(result.orders) ? result.orders : [];
+    if (firstConnection || !state.sync.initialized) {
+      const localOrders = state.orders.filter((order) => !order.isSample);
+      const merged = mergeInitialOrders(localOrders, remoteOrders);
+      const remoteSignature = remoteOrders.map((order) => `${order.id}:${orderTimestamp(order)}`).sort().join("|");
+      const mergedSignature = merged.map((order) => `${order.id}:${orderTimestamp(order)}`).sort().join("|");
+      if (remoteSignature !== mergedSignature) await remoteRequest("replaceAll", { orders: merged });
+      state.orders = merged;
+      state.sync.initialized = true;
+      saveSyncSettings();
+    } else {
+      state.orders = remoteOrders.sort((a, b) => orderTimestamp(b) - orderTimestamp(a));
+    }
+    saveOrders();
+    render();
+    setSyncStatus("synced", "Połączono", `Połączono. ${state.orders.length} zamówień w wspólnej bazie.`);
+    if (!silent) showToast("Zamówienia są zsynchronizowane.");
+    startSyncTimer();
+    return true;
+  } catch (error) {
+    console.warn("Synchronizacja nie powiodła się", error);
+    setSyncStatus("offline", "Brak połączenia", `Nie udało się połączyć: ${error.message}`);
+    if (!silent) showToast("Brak połączenia z Google Sheets.");
+    return false;
+  } finally {
+    state.syncBusy = false;
+  }
+}
+
+async function pushOrder(order) {
+  if (!hasSyncSettings()) return;
+  try {
+    setSyncStatus("syncing", "Zapisywanie…", `Zapisywanie ${order.id} w Google Sheets…`);
+    await remoteRequest("saveOrder", { order });
+    state.sync.pendingUpserts = state.sync.pendingUpserts.filter((pending) => pending.id !== order.id);
+    saveSyncSettings();
+    setSyncStatus("synced", "Połączono", `Zapisano ${order.id} we wspólnej bazie.`);
+  } catch (error) {
+    queueUpsert(order);
+    setSyncStatus("offline", "Zmiana czeka", "Brak połączenia. Zmiana jest zapisana lokalnie i zostanie wysłana później.");
+    showToast("Zapisano lokalnie — synchronizacja czeka.");
+  }
+}
+
+async function deleteRemoteOrder(id) {
+  if (!hasSyncSettings()) return;
+  try {
+    setSyncStatus("syncing", "Usuwanie…", `Usuwanie ${id} ze wspólnej bazy…`);
+    await remoteRequest("deleteOrder", { id });
+    state.sync.pendingDeletes = state.sync.pendingDeletes.filter((pendingId) => pendingId !== id);
+    saveSyncSettings();
+    setSyncStatus("synced", "Połączono", `Usunięto ${id} ze wspólnej bazy.`);
+  } catch (error) {
+    queueDelete(id);
+    setSyncStatus("offline", "Zmiana czeka", "Brak połączenia. Usunięcie zostanie wysłane później.");
+    showToast("Usunięto lokalnie — synchronizacja czeka.");
+  }
+}
+
+async function replaceRemoteOrders(orders) {
+  if (!hasSyncSettings()) return;
+  try {
+    setSyncStatus("syncing", "Zapisywanie…", "Aktualizowanie wspólnej bazy po imporcie…");
+    await remoteRequest("replaceAll", { orders });
+    state.sync.initialized = true;
+    saveSyncSettings();
+    setSyncStatus("synced", "Połączono", `Wspólna baza zawiera ${orders.length} zamówień.`);
+  } catch (error) {
+    state.sync.initialized = false;
+    saveSyncSettings();
+    setSyncStatus("offline", "Import czeka", "Import zapisano lokalnie. Spróbuj ponownie po odzyskaniu połączenia.");
+  }
+}
+
+function startSyncTimer() {
+  clearInterval(state.syncTimer);
+  if (!hasSyncSettings()) return;
+  state.syncTimer = setInterval(() => {
+    if (document.visibilityState === "visible") syncFromRemote({ silent: true });
+  }, SYNC_INTERVAL_MS);
 }
 
 let toastTimer;
@@ -414,13 +640,14 @@ els.itemsContainer.addEventListener("click", (event) => {
 });
 document.querySelector("#shippingCost").addEventListener("input", updateTotal);
 
-els.form.addEventListener("submit", (event) => {
+els.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (!validateForm()) return;
   const order = readForm();
   const index = state.orders.findIndex((existing) => existing.id === order.id);
   if (index >= 0) state.orders[index] = order; else state.orders.unshift(order);
   saveOrders(); render(); closeModal(); showToast(index >= 0 ? "Zamówienie zaktualizowane." : `${order.id} zapisane.`);
+  await pushOrder(order);
 });
 
 els.ordersList.addEventListener("click", (event) => {
@@ -440,8 +667,10 @@ document.querySelector("#clearSamplesBtn").addEventListener("click", () => {
 });
 
 document.querySelector("#confirmCancel").addEventListener("click", () => { state.deleteId = null; els.confirmModal.hidden = true; });
-document.querySelector("#confirmDelete").addEventListener("click", () => {
-  state.orders = state.orders.filter((order) => order.id !== state.deleteId); state.deleteId = null; saveOrders(); render(); els.confirmModal.hidden = true; showToast("Zamówienie usunięte.");
+document.querySelector("#confirmDelete").addEventListener("click", async () => {
+  const id = state.deleteId;
+  state.orders = state.orders.filter((order) => order.id !== id); state.deleteId = null; saveOrders(); render(); els.confirmModal.hidden = true; showToast("Zamówienie usunięte.");
+  await deleteRemoteOrder(id);
 });
 
 document.querySelector("#exportBtn").addEventListener("click", downloadCsv);
@@ -450,8 +679,52 @@ document.querySelector("#importBtn").addEventListener("click", () => document.qu
 document.querySelector("#importInput").addEventListener("change", (event) => { if (event.target.files[0]) importJson(event.target.files[0]); event.target.value = ""; });
 
 els.modal.addEventListener("click", (event) => { if (event.target === els.modal) closeModal(); });
+els.syncButton.addEventListener("click", openSyncModal);
+document.querySelector("#syncCloseBtn").addEventListener("click", closeSyncModal);
+els.syncModal.addEventListener("click", (event) => { if (event.target === els.syncModal) closeSyncModal(); });
+els.syncForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  try {
+    const url = normalizeSyncUrl(els.syncUrl.value);
+    const token = els.syncToken.value.trim();
+    if (!token) throw new Error("Wpisz klucz dostępu.");
+    const changed = !state.sync || state.sync.url !== url || state.sync.token !== token;
+    state.sync = changed
+      ? { url, token, initialized: false, pendingUpserts: [], pendingDeletes: [] }
+      : state.sync;
+    saveSyncSettings();
+    const connected = await syncFromRemote({ firstConnection: changed || !state.sync.initialized });
+    if (connected) closeSyncModal();
+  } catch (error) {
+    setSyncStatus("offline", "Sprawdź dane", error.message);
+  }
+});
+document.querySelector("#syncNowBtn").addEventListener("click", async () => {
+  if (!hasSyncSettings()) {
+    els.syncMessage.textContent = "Najpierw wklej adres Apps Script i klucz dostępu.";
+    els.syncUrl.focus();
+    return;
+  }
+  await syncFromRemote();
+});
+document.querySelector("#syncDisconnectBtn").addEventListener("click", () => {
+  clearInterval(state.syncTimer);
+  state.sync = null;
+  saveSyncSettings();
+  setSyncStatus("local", "Lokalnie", "Odłączono Google Sheets. Dane pozostają zapisane na tym urządzeniu.");
+  els.syncUrl.value = "";
+  els.syncToken.value = "";
+  showToast("Synchronizacja odłączona.");
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && hasSyncSettings()) syncFromRemote({ silent: true });
+});
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") { if (!els.confirmModal.hidden) els.confirmModal.hidden = true; else if (!els.modal.hidden) closeModal(); }
+  if (event.key === "Escape") {
+    if (!els.confirmModal.hidden) els.confirmModal.hidden = true;
+    else if (!els.syncModal.hidden) closeSyncModal();
+    else if (!els.modal.hidden) closeModal();
+  }
 });
 
 const savedTheme = localStorage.getItem(THEME_KEY);
@@ -468,3 +741,9 @@ document.querySelector("#themeToggle").addEventListener("click", () => {
 document.querySelector("#year").textContent = new Date().getFullYear();
 updateThemeIcon();
 render();
+if (hasSyncSettings()) {
+  setSyncStatus("syncing", "Łączenie…", "Łączenie z arkuszem Google Sheets…");
+  syncFromRemote({ silent: true });
+} else {
+  setSyncStatus("local", "Lokalnie", "Aplikacja działa lokalnie. Zamówienia nie są jeszcze współdzielone.");
+}
