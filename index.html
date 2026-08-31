@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#1d1816" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='30' fill='%231d1816'/%3E%3Ctext x='32' y='38' text-anchor='middle' font-family='monospace' font-size='19' font-weight='700' fill='%23d4ed65'%3EPF%3C/text%3E%3C/svg%3E" />
+    <meta
+      name="description"
+      content="Panel zarządzania zamówieniami koszulek Pless Finest."
+    />
+    <title>Pless Finest — zamówienia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Pirata+One&family=Space+Mono:wght@400;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#" aria-label="Pless Finest — strona główna">
+          <img class="brand-logo" src="assets/pless-finest-logo.png" alt="Pless Finest" />
+          <span class="brand-sub">ORDER ROOM / PSZCZYNA</span>
+        </a>
+        <div class="topbar-actions">
+          <button class="icon-button" id="themeToggle" type="button" aria-label="Zmień motyw" title="Zmień motyw">
+            <span data-icon="moon"></span>
+          </button>
+          <button class="button button-primary" id="newOrderBtn" type="button">
+            <span data-icon="plus"></span>
+            Nowe zamówienie
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="intro-row intro-strip" aria-labelledby="pageTitle">
+          <h1 id="pageTitle">Panel zamówień</h1>
+        </section>
+
+        <section class="stats-grid" aria-label="Podsumowanie zamówień">
+          <article class="stat-card stat-card-dark">
+            <div class="stat-topline">
+              <span>DO OGARNIĘCIA</span>
+              <span data-icon="spark"></span>
+            </div>
+            <strong id="activeCount">0</strong>
+            <span class="stat-caption" id="activeCaption">aktywnych zamówień</span>
+          </article>
+          <article class="stat-card">
+            <div class="stat-topline">
+              <span>DO ODBIORU</span>
+              <span class="stat-dot stat-dot-coral"></span>
+            </div>
+            <strong id="pickupCount">0</strong>
+            <span class="stat-caption">gotowych sztuk</span>
+          </article>
+          <article class="stat-card">
+            <div class="stat-topline">
+              <span>DO WYSYŁKI</span>
+              <span class="stat-dot stat-dot-lime"></span>
+            </div>
+            <strong id="shippingCount">0</strong>
+            <span class="stat-caption">paczek w kolejce</span>
+          </article>
+          <article class="stat-card stat-card-accent">
+            <div class="stat-topline">
+              <span>CUSTOMY</span>
+              <span data-icon="needle"></span>
+            </div>
+            <strong id="customCount">0</strong>
+            <span class="stat-caption">indywidualnych sztuk</span>
+          </article>
+        </section>
+
+        <section class="orders-section" aria-labelledby="ordersTitle">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">BIEŻĄCE</p>
+              <h2 id="ordersTitle">Zamówienia</h2>
+            </div>
+            <div class="section-actions">
+              <button class="button button-ghost" id="exportBtn" type="button" aria-label="Eksportuj CSV" title="Eksportuj CSV">
+                <span data-icon="download"></span>
+                CSV
+              </button>
+              <button class="button button-ghost" id="backupBtn" type="button" aria-label="Pobierz kopię JSON" title="Pobierz kopię JSON">
+                <span data-icon="backup"></span>
+                Kopia
+              </button>
+              <button class="button button-ghost" id="importBtn" type="button" aria-label="Importuj kopię JSON" title="Importuj kopię JSON">
+                <span data-icon="upload"></span>
+                Import
+              </button>
+              <input id="importInput" type="file" accept="application/json" hidden />
+            </div>
+          </div>
+
+          <div class="sample-notice" id="sampleNotice" hidden>
+            <div>
+              <strong>Na start dodaliśmy 3 przykładowe zamówienia.</strong>
+              <span>Możesz je edytować albo usunąć jednym kliknięciem.</span>
+            </div>
+            <button class="text-button" id="clearSamplesBtn" type="button">Usuń przykłady</button>
+          </div>
+
+          <div class="toolbar">
+            <label class="search-field">
+              <span data-icon="search"></span>
+              <input id="searchInput" type="search" placeholder="Szukaj po osobie, modelu, numerze…" autocomplete="off" />
+            </label>
+            <div class="filter-tabs" role="group" aria-label="Filtr statusu">
+              <button class="filter-tab is-active" type="button" data-filter="all">Wszystkie</button>
+              <button class="filter-tab" type="button" data-filter="new">Nowe</button>
+              <button class="filter-tab" type="button" data-filter="production">W produkcji</button>
+              <button class="filter-tab" type="button" data-filter="ready">Gotowe</button>
+              <button class="filter-tab" type="button" data-filter="done">Zakończone</button>
+            </div>
+          </div>
+
+          <div class="orders-list" id="ordersList" aria-live="polite"></div>
+          <div class="empty-state" id="emptyState" hidden>
+            <span class="empty-icon" data-icon="shirt"></span>
+            <h3>Tu na razie cisza.</h3>
+            <p>Dodaj pierwsze zamówienie i ruszamy z produkcją.</p>
+            <button class="button button-primary" id="emptyAddBtn" type="button">
+              <span data-icon="plus"></span>
+              Dodaj zamówienie
+            </button>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>PLESS FINEST © <span id="year"></span></span>
+        <span>Dane zapisują się na tym urządzeniu.</span>
+      </footer>
+    </div>
+
+    <div class="modal-backdrop" id="orderModal" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <header class="modal-header">
+          <div>
+            <p class="eyebrow">KARTA ZAMÓWIENIA</p>
+            <h2 id="modalTitle">Nowe zamówienie</h2>
+          </div>
+          <button class="icon-button" id="closeModalBtn" type="button" aria-label="Zamknij">
+            <span data-icon="close"></span>
+          </button>
+        </header>
+
+        <form id="orderForm" novalidate>
+          <input id="orderId" type="hidden" />
+          <div class="form-section">
+            <div class="form-section-title"><span>01</span><h3>Kontakt</h3></div>
+            <div class="form-grid form-grid-2">
+              <label class="field field-wide">
+                <span>Imię i nazwisko *</span>
+                <input id="customerName" name="customerName" required placeholder="np. Marta Kowalska" />
+                <small class="field-error">Wpisz imię i nazwisko.</small>
+              </label>
+              <label class="field">
+                <span>Telefon *</span>
+                <input id="phone" name="phone" type="tel" required placeholder="+48 000 000 000" />
+                <small class="field-error">Podaj telefon kontaktowy.</small>
+              </label>
+              <label class="field">
+                <span>E-mail</span>
+                <input id="email" name="email" type="email" placeholder="marta@email.pl" />
+                <small class="field-error">Sprawdź adres e-mail.</small>
+              </label>
+              <label class="field field-wide">
+                <span>Instagram / inny kontakt</span>
+                <input id="social" name="social" placeholder="@nazwa_profilu" />
+              </label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title"><span>02</span><h3>Koszulki</h3></div>
+            <div id="itemsContainer" class="items-container"></div>
+            <button class="button button-secondary add-item-button" id="addItemBtn" type="button">
+              <span data-icon="plus"></span>
+              Dodaj kolejną koszulkę
+            </button>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title"><span>03</span><h3>Odbiór</h3></div>
+            <div class="delivery-switch" role="radiogroup" aria-label="Sposób odbioru">
+              <label>
+                <input type="radio" name="delivery" value="pickup" checked />
+                <span><span data-icon="pin"></span><strong>Odbiór własny</strong><small>Bez adresu wysyłki</small></span>
+              </label>
+              <label>
+                <input type="radio" name="delivery" value="shipping" />
+                <span><span data-icon="truck"></span><strong>Wysyłka</strong><small>Kurier / paczkomat</small></span>
+              </label>
+            </div>
+            <div class="shipping-fields" id="shippingFields" hidden>
+              <div class="form-grid form-grid-2">
+                <label class="field field-wide">
+                  <span>Adres / paczkomat *</span>
+                  <input id="shippingAddress" name="shippingAddress" placeholder="Ulica, kod, miasto lub kod paczkomatu" />
+                  <small class="field-error">Podaj adres wysyłki lub paczkomat.</small>
+                </label>
+                <label class="field">
+                  <span>Koszt wysyłki (zł)</span>
+                  <input id="shippingCost" name="shippingCost" type="number" min="0" step="0.01" value="0" />
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-title"><span>04</span><h3>Realizacja</h3></div>
+            <div class="form-grid form-grid-3">
+              <label class="field">
+                <span>Status</span>
+                <select id="status" name="status">
+                  <option value="new">Nowe</option>
+                  <option value="production">W produkcji</option>
+                  <option value="ready">Gotowe</option>
+                  <option value="done">Zakończone</option>
+                  <option value="cancelled">Anulowane</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Płatność</span>
+                <select id="payment" name="payment">
+                  <option value="unpaid">Nieopłacone</option>
+                  <option value="partial">Zaliczka</option>
+                  <option value="paid">Opłacone</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>Termin</span>
+                <input id="dueDate" name="dueDate" type="date" />
+              </label>
+              <label class="field field-wide-all">
+                <span>Notatki</span>
+                <textarea id="notes" name="notes" rows="3" placeholder="Ustalenia, preferowany kontakt, dodatkowe informacje…"></textarea>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-summary">
+            <div>
+              <span>Wartość zamówienia</span>
+              <strong id="orderTotal">0,00 zł</strong>
+            </div>
+            <p id="formError" role="alert" hidden>Uzupełnij wymagane pola.</p>
+            <div class="modal-actions">
+              <button class="button button-ghost" id="cancelBtn" type="button">Anuluj</button>
+              <button class="button button-primary" type="submit">
+                <span data-icon="check"></span>
+                Zapisz zamówienie
+              </button>
+            </div>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div class="confirm-backdrop" id="confirmModal" hidden>
+      <section class="confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <span class="confirm-icon" data-icon="trash"></span>
+        <h2 id="confirmTitle">Usunąć zamówienie?</h2>
+        <p>Tej operacji nie można cofnąć.</p>
+        <div>
+          <button class="button button-ghost" id="confirmCancel" type="button">Zostaw</button>
+          <button class="button button-danger" id="confirmDelete" type="button">Usuń</button>
+        </div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <template id="itemTemplate">
+      <article class="order-item-form">
+        <div class="item-heading">
+          <strong>Koszulka <span class="item-number"></span></strong>
+          <button class="icon-button remove-item-btn" type="button" aria-label="Usuń koszulkę">
+            <span data-icon="trash"></span>
+          </button>
+        </div>
+        <div class="form-grid item-grid">
+          <label class="field item-model-field">
+            <span>Model *</span>
+            <select class="item-model" required>
+              <option value="">Wybierz model</option>
+              <option>Welcome to the Lustschloss</option>
+              <option>2 of Pless Most Wanted</option>
+              <option>Daisy Me Rollin</option>
+              <option>Eis Eis Baby</option>
+              <option>Mo Bisons Mo Problems</option>
+              <option>Still Telemann</option>
+              <option value="Custom">Custom / inny nadruk</option>
+            </select>
+            <small class="field-error">Wybierz model.</small>
+          </label>
+          <label class="field">
+            <span>Rozmiar *</span>
+            <select class="item-size" required>
+              <option value="">—</option>
+              <option>XS</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option><option>3XL</option><option>Inny</option>
+            </select>
+            <small class="field-error">Wybierz rozmiar.</small>
+          </label>
+          <label class="field">
+            <span>Kolor *</span>
+            <select class="item-color" required>
+              <option value="">Wybierz kolor</option>
+              <option value="burgund">Burgund</option>
+              <option value="wolf grey">Wolf Grey</option>
+              <option value="black">Black</option>
+              <option value="white">White</option>
+              <option value="mexican green">Mexican Green</option>
+              <option value="ivory">Ivory</option>
+              <option value="other">Inny / custom</option>
+            </select>
+            <small class="color-hint"></small>
+            <small class="field-error">Wybierz kolor.</small>
+          </label>
+          <label class="field field-quantity">
+            <span>Ilość</span>
+            <input class="item-quantity" type="number" min="1" step="1" value="1" />
+          </label>
+          <label class="field field-price">
+            <span>Cena / szt. (zł)</span>
+            <input class="item-price" type="number" min="0" step="0.01" value="0" />
+          </label>
+        </div>
+        <label class="custom-toggle">
+          <input class="item-custom-toggle" type="checkbox" />
+          <span class="toggle-ui"></span>
+          <span><strong>To jest custom</strong><small>Inny nadruk, kolor lub indywidualne ustalenia</small></span>
+        </label>
+        <div class="custom-fields" hidden>
+          <div class="form-grid form-grid-2">
+            <label class="field">
+              <span>Opis nadruku *</span>
+              <input class="item-custom-print" placeholder="Co ma się znaleźć na koszulce?" />
+              <small class="field-error">Opisz customowy nadruk.</small>
+            </label>
+            <label class="field">
+              <span>Szczegóły koloru / materiału</span>
+              <input class="item-custom-details" placeholder="np. granat, nadruk kremowy" />
+            </label>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
